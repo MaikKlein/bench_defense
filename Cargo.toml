@@ -6,8 +6,7 @@ edition = "2018"
 
 [dependencies]
 
-pyro = {path = "/home/maik/projects/pyro"}
-#pyro = "0.2"
+pyro = "0.2"
 ggez = "0.4"
 rand = "0.5"
 itertools = "0.7"
