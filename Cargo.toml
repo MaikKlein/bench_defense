@@ -1,0 +1,14 @@
+[package]
+name = "bench_defense"
+version = "0.1.0"
+authors = ["maik <maikklein@googlemail.com>"]
+edition = "2018"
+
+[dependencies]
+
+pyro = {path = "/home/maik/projects/pyro"}
+#pyro = "0.2"
+ggez = "0.4"
+rand = "0.5"
+itertools = "0.7"
+env_logger = "0.5"
