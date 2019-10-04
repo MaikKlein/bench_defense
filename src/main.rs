@@ -37,7 +37,7 @@ pub struct TimeToLive {
     pub created: SystemTime,
     pub time_until_death: Duration,
 }
-pub type Missile<Projectile: Component> = (
+pub type Missile<Projectile> = (
     Position,
     Velocity,
     Render,
@@ -299,27 +299,24 @@ pub fn animate_explosion(world: &mut World, dt: DeltaTime) {
         }).collect();
     world.remove_entities(entities);
 }
-pub fn draw_explosion(store: &AssetStore, ctx: &mut Context, world: &mut World) {
+pub fn draw_explosion(store: &AssetStore, ctx: &mut Context, world: &mut World) -> GameResult {
     let circle = &store.assets[AssetId::Explosion as usize];
     let mut batch = graphics::spritebatch::SpriteBatch::new(circle.image.clone());
     world
         .matcher::<All<(Read<Explosion>, Read<Position>)>>()
         .for_each(|(explosion, pos)| {
             let alpha = 1.0 - explosion.radius * 255.0 / explosion.max_radius;
-            let param = graphics::DrawParam {
-                dest: graphics::Point2::new(pos.0.x, pos.0.y),
-                rotation: 0.0,
-                offset: na::Point2::new(0.5, 0.5),
-                scale: na::Point2::new(circle.scale, circle.scale) * explosion.radius,
-                // ggez seems to ingore color in batches, but it respects the alpha value
-                color: Some(graphics::Color::from_rgba(255, 0, 0, alpha as u8)),
-                ..Default::default()
-            };
+            let param = graphics::DrawParam::new()
+                .dest(na::Point2::new(pos.0.x, pos.0.y))
+                .rotation(0.0)
+                .offset(na::Point2::new(0.5, 0.5))
+                .scale(na::Vector2::new(circle.scale, circle.scale) * explosion.radius)
+                .color(graphics::Color::from_rgba(255, 0, 0, alpha as u8));
             batch.add(param);
         });
-    graphics::draw_ex(ctx, &batch, graphics::DrawParam::default());
+    graphics::draw(ctx, &batch, graphics::DrawParam::default())
 }
-pub fn draw(store: &AssetStore, world: &mut World, ctx: &mut Context) -> GameResult<()> {
+pub fn draw(store: &AssetStore, world: &mut World, ctx: &mut Context) -> GameResult {
     let submisson = world
         .matcher::<All<(Read<Position>, Read<Orientation>, Read<Flip>, Read<Render>)>>()
         .sorted_by(|(_, _, _, left), (_, _, _, right)| Ord::cmp(&left.asset, &right.asset))
@@ -335,16 +332,14 @@ pub fn draw(store: &AssetStore, world: &mut World, ctx: &mut Context) -> GameRes
                 Flip::Left => 1.0,
                 Flip::Right => -1.0,
             };
-            let param = graphics::DrawParam {
-                dest: graphics::Point2::new(pos.0.x, pos.0.y),
-                rotation: orientation.0 + asset.rotation,
-                offset: na::Point2::new(0.5, 0.5),
-                scale: na::Point2::new(render.scale * scale_y, render.scale) * asset.scale,
-                ..Default::default()
-            };
+            let param = graphics::DrawParam::new()
+                .dest(na::Point2::new(pos.0.x, pos.0.y))
+                .rotation(orientation.0 + asset.rotation)
+                .offset(na::Point2::new(0.5, 0.5))
+                .scale(na::Vector2::new(render.scale * scale_y, render.scale) * asset.scale);
             batch.add(param);
         }
-        graphics::draw_ex(ctx, &batch, graphics::DrawParam::default());
+        graphics::draw(ctx, &batch, graphics::DrawParam::default())?;
     }
     Ok(())
 }
@@ -584,13 +579,14 @@ pub fn spawn_towers(world: &mut World, (width, height): (f32, f32), offset: f32)
 impl MainState {
     fn new(ctx: &mut Context) -> GameResult<MainState> {
         let mut world = World::new();
+        let screen_coords = graphics::screen_coordinates(ctx);
         let size = (
-            ctx.conf.window_mode.width as f32,
-            ctx.conf.window_mode.height as f32,
+            screen_coords.w,
+            screen_coords.h,
         );
         let store = AssetStore::load(ctx).expect("Unable to load assets");
         let sides = Sides::new(size, 100.0, 100);
-        let font = graphics::Font::new(ctx, "/DejaVuSerif.ttf", 18)?;
+        let font = graphics::Font::new(ctx, "/DejaVuSerif.ttf")?;
         spawn_towers(&mut world, size, 50.0);
         let spawner = EnemySpawner {
             enemies_to_spawn: 500,
@@ -607,7 +603,7 @@ impl MainState {
 }
 impl event::EventHandler for MainState {
     fn update(&mut self, ctx: &mut Context) -> GameResult<()> {
-        let dt = DeltaTime(timer::duration_to_f64(timer::get_delta(ctx)) as f32);
+        let dt = DeltaTime(timer::duration_to_f64(timer::delta(ctx)) as f32);
         let world = &mut self.world;
         self.spawner.spawn_enemies(world, &self.sides);
         move_torwards(world, dt);
@@ -623,35 +619,36 @@ impl event::EventHandler for MainState {
         Ok(())
     }
 
-    fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
-        let fps = timer::get_fps(ctx) as u64;
-        graphics::clear(ctx);
-        graphics::set_background_color(ctx, graphics::Color::from_rgb(40, 220, 70));
+    fn draw(&mut self, ctx: &mut Context) -> GameResult {
+        let fps = timer::fps(ctx) as u64;
+        graphics::clear(ctx, graphics::Color::from_rgb(40, 220, 70));
         draw(&self.store, &mut self.world, ctx)?;
-        draw_explosion(&self.store, ctx, &mut self.world);
+        draw_explosion(&self.store, ctx, &mut self.world)?;
         let count = self.world.matcher::<All<(Read<Enemy>,)>>().count();
         let text = graphics::Text::new(
-            ctx,
-            &format!("FPS: {}, Enemies: {}", fps, count),
-            &self.font,
-        )?;
-        graphics::draw(ctx, &text, na::Point2::new(0.0, 0.0), 0.0)?;
-        graphics::present(ctx);
-        Ok(())
+            format!("FPS: {}, Enemies: {}", fps, count)
+        );
+        let text_param = graphics::DrawParam::new()
+            .dest(na::Point2::new(0.0, 0.0));
+        graphics::draw(ctx, &text, text_param)?;
+        graphics::present(ctx)
     }
 }
 
-pub fn main() {
+pub fn main() -> GameResult {
     env_logger::init();
-    let mut c = conf::Conf::new();
-    c.window_mode.vsync = false;
-
-    let ctx = &mut Context::load_from_conf("super_simple", "ggez", c).unwrap();
-    if let Ok(manifest_dir) = env::var("CARGO_MANIFEST_DIR") {
-        let mut path = path::PathBuf::from(manifest_dir);
-        path.push("resources");
-        ctx.filesystem.mount(&path, true);
-    }
-    let state = &mut MainState::new(ctx).unwrap();
-    event::run(ctx, state).unwrap();
+    let resources = env::var("CARGO_MANIFEST_DIR")
+        .map(path::PathBuf::from)
+        .map(|mut path| {
+            path.push("resources");
+            path
+        })
+        .map_err(|err| GameError::FilesystemError(err.to_string()))?;
+    let (ctx, event_loop) = {
+        &mut ContextBuilder::new("super_simple", "ggez")
+            .add_resource_path(resources)
+            .build()?
+    };
+    let state = &mut MainState::new(ctx)?;
+    event::run(ctx, event_loop, state)
 }
