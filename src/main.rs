@@ -134,7 +134,7 @@ pub fn update_orientation(world: &mut World) {
         .matcher::<All<(Read<Velocity>, Write<Orientation>)>>()
         .for_each(|(vel, orientation)| {
             let dir = vel.0.normalize();
-            let mut angle = na::angle(&dir, &na::Vector2::new(1.0, 0.0));
+            let mut angle = dir.angle(&na::Vector2::new(1.0, 0.0));
             if dir.y < 0.0 {
                 angle = -angle;
             }
@@ -152,7 +152,8 @@ pub fn move_torwards(world: &mut World, dt: DeltaTime) {
         )>>().for_each(|(pos, target, speed, flip)| {
             let dir = (target.destination - pos.0).normalize();
             pos.0 += dir * speed.0 * dt.0;
-            let angle = na::angle(&na::Vector2::new(1.0, 0.0), &dir);
+            let up = na::Vector2::new(1.0, 0.0);
+            let angle = up.angle(&dir);
 
             *flip = if angle > PI / 2.0 {
                 Flip::Left
@@ -625,9 +626,13 @@ impl event::EventHandler for MainState {
         draw(&self.store, &mut self.world, ctx)?;
         draw_explosion(&self.store, ctx, &mut self.world)?;
         let count = self.world.matcher::<All<(Read<Enemy>,)>>().count();
-        let text = graphics::Text::new(
-            format!("FPS: {}, Enemies: {}", fps, count)
-        );
+        let tf = graphics::TextFragment {
+            text: format!("FPS: {}, Enemies: {}", fps, count),
+            font: Some(self.font),
+            scale: Some(graphics::Scale::uniform(18.0)),
+            ..Default::default()
+        };
+        let text = graphics::Text::new(tf);
         let text_param = graphics::DrawParam::new()
             .dest(na::Point2::new(0.0, 0.0));
         graphics::draw(ctx, &text, text_param)?;
